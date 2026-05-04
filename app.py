@@ -1,4 +1,4 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from flask_socketio import SocketIO, emit, join_room, leave_room as socket_leave
 
 app = Flask(__name__)
@@ -70,46 +70,60 @@ def handle_message(data):
 def handle_call_request(data):
     emit("incoming_call", {
         "from_user": data["username"],
+        "from_sid":  request.sid,
         "room_code": data["room_code"]
     }, room=data["room_code"], include_self=False)
 
 @socketio.on("call_accepted")
 def handle_call_accepted(data):
     emit("call_accepted", {
-        "from_user": data["username"]
-    }, room=data["room_code"], include_self=False)
+        "from_user": data["username"],
+        "from_sid":  request.sid
+    }, to=data["to_sid"])
 
 @socketio.on("call_rejected")
 def handle_call_rejected(data):
     emit("call_rejected", {
         "from_user": data["username"]
-    }, room=data["room_code"], include_self=False)
+    }, to=data["to_sid"])
 
 @socketio.on("call_ended")
 def handle_call_ended(data):
-    emit("call_ended", {
-        "from_user": data["username"]
-    }, room=data["room_code"], include_self=False)
+    for sid in data.get("peer_sids", []):
+        emit("call_ended", {
+            "from_user": data["username"],
+            "from_sid":  request.sid
+        }, to=sid)
+
+@socketio.on("call_participant_joined")
+def handle_participant_joined(data):
+    for sid in data.get("notify_sids", []):
+        emit("call_participant_joined", {
+            "peer_sid":  data["peer_sid"],
+            "peer_user": data["peer_user"]
+        }, to=sid)
 
 @socketio.on("webrtc_offer")
 def handle_offer(data):
     emit("webrtc_offer", {
-        "offer": data["offer"],
-        "from_user": data["username"]
-    }, room=data["room_code"], include_self=False)
+        "offer":     data["offer"],
+        "from_user": data["username"],
+        "from_sid":  request.sid
+    }, to=data["to_sid"])
 
 @socketio.on("webrtc_answer")
 def handle_answer(data):
     emit("webrtc_answer", {
-        "answer": data["answer"],
-        "from_user": data["username"]
-    }, room=data["room_code"], include_self=False)
+        "answer":    data["answer"],
+        "from_sid":  request.sid
+    }, to=data["to_sid"])
 
 @socketio.on("webrtc_ice")
 def handle_ice(data):
     emit("webrtc_ice", {
-        "candidate": data["candidate"]
-    }, room=data["room_code"], include_self=False)
+        "candidate": data["candidate"],
+        "from_sid":  request.sid
+    }, to=data["to_sid"])
 
 if __name__ == "__main__":
     socketio.run(app, host="0.0.0.0", port=10000,
